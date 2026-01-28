@@ -16,7 +16,7 @@ import os
 import urllib.request
 import ssl
 
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/OneALab/Touchdesigner_MCP_Bridge/main/td_setup.py"
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/OneALab/Touchdesigner_MCP_Bridge/master/td_setup.py"
 
 def get_cache_path():
     """Get platform-appropriate cache directory."""
