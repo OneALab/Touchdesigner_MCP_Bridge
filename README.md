@@ -18,8 +18,8 @@ This is an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) serv
 ### 1. Clone or Download
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/touchdesigner-mcp.git
-cd touchdesigner-mcp
+git clone https://github.com/OneALab/Touchdesigner_MCP_Bridge.git
+cd Touchdesigner_MCP_Bridge
 ```
 
 ### 2. Install Python Dependencies
@@ -30,12 +30,19 @@ pip install -r requirements.txt
 
 ### 3. Set Up TouchDesigner
 
-**Option A: Drag and drop (Recommended)**
+**Option A: Auto-Updating Loader (Recommended)**
+1. Open TouchDesigner
+2. Drag `mcp_bridge_loader.tox` into your project
+3. The loader automatically fetches the latest `td_setup.py` from GitHub
+4. Works offline using a local cache after first run
+5. Save your project
+
+**Option B: Static Component**
 1. Open TouchDesigner
 2. Drag `mcp_bridge.tox` into your project
 3. Save your project
 
-**Option B: Run setup script**
+**Option C: Run setup script manually**
 1. Open TouchDesigner
 2. Create a Text DAT
 3. Paste contents of `td_setup.py`
@@ -111,6 +118,18 @@ This will walk you through both TouchDesigner and Claude Code configuration.
 | `td_get_errors` | Get recent errors from textport |
 | `td_get_cook_time` | Get operator performance info |
 
+## Web UI
+
+The bridge includes a browser-based control panel that auto-generates controls from custom parameters.
+
+**Open:** `http://127.0.0.1:9980/ui`
+
+- Discovers all COMPs with custom parameters
+- Generates sliders, toggles, menus, buttons automatically
+- Changes update TouchDesigner in real-time
+
+To test: Create a baseCOMP, add custom parameters (Customize Component), then refresh the web UI.
+
 ## Example Usage
 
 Once connected, you can ask Claude things like:
@@ -158,8 +177,10 @@ Once connected, you can ask Claude things like:
 | File | Description |
 |------|-------------|
 | `mcp_server.py` | MCP server that Claude Code connects to |
-| `mcp_bridge.tox` | Pre-built TD component (drag into projects) |
+| `mcp_bridge_loader.tox` | Auto-updating loader (fetches latest from GitHub) |
+| `mcp_bridge.tox` | Pre-built TD component (static version) |
 | `td_setup.py` | Script to create the bridge in TD |
+| `loader_script.py` | Source for the loader (reference only) |
 | `setup.py` | Interactive setup wizard |
 | `requirements.txt` | Python dependencies |
 
