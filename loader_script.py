@@ -161,10 +161,10 @@ def get_ui_index():
             <div class="preview-grid" id="preview-grid"></div>
         </div>
         <div id="tab-presets" class="tab-content">
-            <div id="presets-panel"></div>
+            <div id="presets-panel" class="full-panel"></div>
         </div>
         <div id="tab-cues" class="tab-content">
-            <div id="cues-panel"></div>
+            <div id="cues-panel" class="full-panel"></div>
         </div>
     </main>
     <script src="/ui/controls.js"></script>
@@ -231,8 +231,9 @@ h1 { font-size: 1.25rem; font-weight: 600; }
 }
 .status.connected .indicator { background: var(--success); }
 main { display: flex; height: calc(100vh - 60px); }
-.tab-content { display: none; width: 100%; }
+.tab-content { display: none; width: 100%; overflow: hidden; }
 .tab-content.active { display: flex; }
+.full-panel { width: 100%; overflow-y: auto; }
 #component-list {
     width: 250px;
     background: var(--bg-secondary);
@@ -283,31 +284,121 @@ button {
 }
 button:hover { background: var(--accent-hover); }
 .preview-grid {
+    padding: 1rem;
+    width: 100%;
+    overflow-y: auto;
+}
+.preview-grid-inner {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 1rem;
-    padding: 1rem;
-    width: 100%;
+    margin-bottom: 1rem;
 }
-.top-preview-wrapper {
+.preview-grid-inner.chop-grid {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.top-preview-wrapper, .chop-preview-wrapper {
     background: var(--bg-secondary);
     border-radius: 8px;
     overflow: hidden;
 }
+.preview-label {
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+.chop-type { opacity: 0.6; }
 .top-preview { width: 100%; display: block; }
-.chop-preview { width: 100%; height: 80px; }'''
+.chop-canvas { width: 100%; height: 100px; display: block; }
+/* Presets */
+.preset-controls {
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+.preset-controls input {
+    flex: 1;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 4px;
+}
+.preset-list {
+    padding: 1rem;
+}
+.preset-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+.preset-name { flex: 1; }
+/* Cues */
+.cue-controls {
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+.cue-list {
+    padding: 1rem;
+}
+.cue-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+.cue-index {
+    width: 30px;
+    text-align: center;
+    font-weight: bold;
+    color: var(--accent);
+}
+.cue-name { flex: 1; }
+button.danger {
+    background: var(--error);
+}
+button.danger:hover {
+    background: #da3633;
+}'''
 
 def get_ui_app():
     return '''let ws = null;
 let selectedComponent = null;
 let components = [];
+let presets = [];
+let cues = [];
 
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
     setupTabs();
+    await loadProjectInfo();
     await loadComponents();
     connectWebSocket();
+}
+
+async function loadProjectInfo() {
+    try {
+        const res = await fetch('/ui/info', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+        const info = await res.json();
+        const title = info.projectName || 'TouchDesigner Control';
+        document.getElementById('page-title').textContent = title;
+        document.title = title;
+    } catch (e) {
+        console.error('Failed to load project info:', e);
+    }
 }
 
 function setupTabs() {
@@ -317,6 +408,10 @@ function setupTabs() {
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             tab.classList.add('active');
             document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+            // Load content for specific tabs
+            if (tab.dataset.tab === 'previews') loadPreviews();
+            if (tab.dataset.tab === 'presets') loadPresets();
+            if (tab.dataset.tab === 'cues') loadCues();
         });
     });
 }
@@ -452,6 +547,201 @@ function connectWebSocket() {
             if (span) span.textContent = data.value;
         }
     };
+}
+
+// === PRESETS ===
+async function loadPresets() {
+    if (!selectedComponent) {
+        document.getElementById('presets-panel').innerHTML = '<p>Select a component first</p>';
+        return;
+    }
+    try {
+        const res = await fetch('/presets/list', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({comp_path: selectedComponent})
+        });
+        const data = await res.json();
+        presets = data.presets || [];
+        renderPresets();
+    } catch (e) {
+        console.error('Failed to load presets:', e);
+    }
+}
+
+function renderPresets() {
+    const panel = document.getElementById('presets-panel');
+    let html = '<div class="preset-controls">';
+    html += '<input type="text" id="preset-name" placeholder="Preset name">';
+    html += '<button onclick="savePreset()">Save Preset</button>';
+    html += '</div>';
+    html += '<div class="preset-list">';
+    if (presets.length === 0) {
+        html += '<p>No presets saved</p>';
+    } else {
+        for (const preset of presets) {
+            html += '<div class="preset-item">';
+            html += '<span class="preset-name">' + preset.name + '</span>';
+            html += '<button onclick="loadPreset(\\'' + preset.name + '\\')">Load</button>';
+            html += '<button class="danger" onclick="deletePreset(\\'' + preset.name + '\\')">Delete</button>';
+            html += '</div>';
+        }
+    }
+    html += '</div>';
+    panel.innerHTML = html;
+}
+
+async function savePreset() {
+    if (!selectedComponent) return;
+    const name = document.getElementById('preset-name').value.trim();
+    if (!name) { alert('Enter a preset name'); return; }
+    try {
+        const res = await fetch('/presets/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name, comp_path: selectedComponent})
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('preset-name').value = '';
+            await loadPresets();
+        } else {
+            alert('Failed to save: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to save preset:', e);
+    }
+}
+
+async function loadPreset(name) {
+    if (!selectedComponent) return;
+    try {
+        const res = await fetch('/presets/load', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name, comp_path: selectedComponent})
+        });
+        const data = await res.json();
+        if (data.success) {
+            await loadComponentParameters(selectedComponent);
+        } else {
+            alert('Failed to load: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to load preset:', e);
+    }
+}
+
+async function deletePreset(name) {
+    if (!selectedComponent) return;
+    if (!confirm('Delete preset "' + name + '"?')) return;
+    try {
+        await fetch('/presets/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name, comp_path: selectedComponent})
+        });
+        await loadPresets();
+    } catch (e) {
+        console.error('Failed to delete preset:', e);
+    }
+}
+
+// === CUES ===
+async function loadCues() {
+    try {
+        const res = await fetch('/cues/list', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+        const data = await res.json();
+        cues = data.cues || [];
+        renderCues();
+    } catch (e) {
+        console.error('Failed to load cues:', e);
+    }
+}
+
+function renderCues() {
+    const panel = document.getElementById('cues-panel');
+    let html = '<div class="cue-controls">';
+    html += '<button onclick="addCue()">Add Cue</button>';
+    html += '<button onclick="goCue(\\'next\\')">GO NEXT</button>';
+    html += '<button onclick="goCue(\\'back\\')">GO BACK</button>';
+    html += '</div>';
+    html += '<div class="cue-list">';
+    if (cues.length === 0) {
+        html += '<p>No cues</p>';
+    } else {
+        for (const cue of cues) {
+            html += '<div class="cue-item" data-id="' + cue.id + '">';
+            html += '<span class="cue-index">' + cue.index + '</span>';
+            html += '<span class="cue-name">' + cue.name + '</span>';
+            html += '<button onclick="goCue(\\'' + cue.id + '\\')">GO</button>';
+            html += '<button onclick="editCue(\\'' + cue.id + '\\')">Edit</button>';
+            html += '<button class="danger" onclick="deleteCue(\\'' + cue.id + '\\')">Delete</button>';
+            html += '</div>';
+        }
+    }
+    html += '</div>';
+    panel.innerHTML = html;
+}
+
+async function addCue() {
+    const name = prompt('Cue name:', 'Cue ' + (cues.length + 1));
+    if (!name) return;
+    try {
+        const snapshotRes = await fetch('/cues/snapshot', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({parent_path: '/project1', max_depth: 3})
+        });
+        const snapshotData = await snapshotRes.json();
+        const res = await fetch('/cues/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name, snapshot: snapshotData.snapshot || {}, actions: []})
+        });
+        await loadCues();
+    } catch (e) {
+        console.error('Failed to add cue:', e);
+    }
+}
+
+async function goCue(idOrAction) {
+    try {
+        let endpoint = '/cues/go';
+        let body = {};
+        if (idOrAction === 'next') {
+            endpoint = '/cues/next';
+        } else if (idOrAction === 'back') {
+            endpoint = '/cues/back';
+        } else {
+            body = {id: idOrAction};
+        }
+        await fetch(endpoint, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+    } catch (e) {
+        console.error('Failed to go cue:', e);
+    }
+}
+
+function editCue(id) {
+    alert('Edit cue: ' + id + ' (editor coming soon)');
+}
+
+async function deleteCue(id) {
+    if (!confirm('Delete this cue?')) return;
+    try {
+        await fetch('/cues/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id})
+        });
+        await loadCues();
+    } catch (e) {
+        console.error('Failed to delete cue:', e);
+    }
 }'''
 
 def get_ui_controls():
@@ -465,29 +755,109 @@ async function loadPreviews() {
     const grid = document.getElementById('preview-grid');
     grid.innerHTML = '<p>Loading...</p>';
     try {
-        const res = await fetch('/preview/discover');
+        const res = await fetch('/preview/discover', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
         const data = await res.json();
         if (!data.success) {
             grid.innerHTML = '<p>No previews found</p>';
             return;
         }
         grid.innerHTML = '';
-        for (const top of data.tops || []) {
-            createTopPreview(top, grid);
+
+        // TOPs section
+        if (data.tops && data.tops.length > 0) {
+            const topSection = document.createElement('div');
+            topSection.innerHTML = '<h3 style="margin:1rem;color:var(--text-secondary);">TOPs</h3>';
+            grid.appendChild(topSection);
+            const topGrid = document.createElement('div');
+            topGrid.className = 'preview-grid-inner';
+            for (const top of data.tops) {
+                createTopPreview(top, topGrid);
+            }
+            grid.appendChild(topGrid);
+        }
+
+        // CHOPs section
+        if (data.chops && data.chops.length > 0) {
+            const chopSection = document.createElement('div');
+            chopSection.innerHTML = '<h3 style="margin:1rem;color:var(--text-secondary);">CHOPs</h3>';
+            grid.appendChild(chopSection);
+            const chopGrid = document.createElement('div');
+            chopGrid.className = 'preview-grid-inner chop-grid';
+            for (const chop of data.chops) {
+                createChopPreview(chop, chopGrid);
+            }
+            grid.appendChild(chopGrid);
+        }
+
+        if ((!data.tops || data.tops.length === 0) && (!data.chops || data.chops.length === 0)) {
+            grid.innerHTML = '<p>No TOPs or CHOPs found</p>';
         }
     } catch (e) {
-        grid.innerHTML = '<p>Error loading previews</p>';
+        grid.innerHTML = '<p>Error loading previews: ' + e + '</p>';
     }
 }
 
 function createTopPreview(top, container) {
     const wrapper = document.createElement('div');
     wrapper.className = 'top-preview-wrapper';
-    wrapper.innerHTML = '<div style="padding:0.5rem;font-size:0.75rem;">' + top.name + '</div><img class="top-preview" src="/preview/top?path=' + encodeURIComponent(top.path) + '&t=' + Date.now() + '">';
+    wrapper.innerHTML = '<div class="preview-label">' + top.name + '</div><img class="top-preview" src="/preview/top?path=' + encodeURIComponent(top.path) + '&t=' + Date.now() + '">';
     const img = wrapper.querySelector('img');
     const interval = setInterval(() => {
         img.src = '/preview/top?path=' + encodeURIComponent(top.path) + '&t=' + Date.now();
     }, 500);
+    previewIntervals.push(interval);
+    container.appendChild(wrapper);
+}
+
+function createChopPreview(chop, container) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'chop-preview-wrapper';
+    wrapper.innerHTML = '<div class="preview-label">' + chop.name + ' <span class="chop-type">(' + chop.type + ')</span></div><canvas class="chop-canvas" width="300" height="100"></canvas>';
+    const canvas = wrapper.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+    const colors = ['#58a6ff', '#f85149', '#3fb950', '#d29922', '#a371f7', '#f778ba'];
+
+    async function drawChop() {
+        try {
+            const res = await fetch('/preview/chop', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: chop.path, max_samples: 100})
+            });
+            const data = await res.json();
+            if (!data.success || !data.channels) return;
+
+            ctx.fillStyle = '#161b22';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            data.channels.forEach((ch, i) => {
+                if (!ch.values || ch.values.length === 0) return;
+                ctx.strokeStyle = colors[i % colors.length];
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                const range = (ch.max - ch.min) || 1;
+                ch.values.forEach((v, x) => {
+                    const px = (x / ch.values.length) * canvas.width;
+                    const py = canvas.height - ((v - ch.min) / range) * canvas.height;
+                    x === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+                });
+                ctx.stroke();
+            });
+
+            // Draw channel names
+            ctx.font = '10px sans-serif';
+            data.channels.forEach((ch, i) => {
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.fillText(ch.name, 4, 12 + i * 12);
+            });
+        } catch (e) {
+            ctx.fillStyle = '#f85149';
+            ctx.fillText('Error', 10, 20);
+        }
+    }
+
+    drawChop();
+    const interval = setInterval(drawChop, 100);
     previewIntervals.push(interval);
     container.appendChild(wrapper);
 }
