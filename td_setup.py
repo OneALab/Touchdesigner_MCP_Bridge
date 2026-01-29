@@ -313,11 +313,11 @@ def create_extension(path, class_name='Ext', methods=None):
         method_code = ""
         for m in methods:
             method_code += f"\\n    def {m}(self):\\n        pass\\n"
-        code = f'''class {class_name}:
+        code = f"""class {class_name}:
     def __init__(self, ownerComp):
         self.ownerComp = ownerComp
 {method_code}
-'''
+"""
         return set_extension(path, code, class_name)
     except Exception as e:
         return {'success': False, 'error': str(e)}
