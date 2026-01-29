@@ -424,21 +424,119 @@ button.danger:hover {
     display: flex;
     gap: 0.5rem;
     margin-top: 1rem;
-}'''
+}
+/* Tree View */
+.tree-container { padding: 0.5rem 0; }
+.tree-item {
+    display: flex;
+    align-items: center;
+    padding: 0.25rem 0;
+    cursor: default;
+}
+.tree-toggle {
+    width: 16px;
+    text-align: center;
+    cursor: pointer;
+    color: var(--text-secondary);
+    user-select: none;
+}
+.tree-spacer { width: 16px; }
+.tree-label {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.tree-label:hover { background: var(--bg-tertiary); }
+.tree-label.has-params { color: var(--text-primary); }
+.tree-label.selected { background: var(--accent); color: var(--bg-primary); }
+.tree-children { margin-left: 8px; }
+.tree-children.collapsed { display: none; }
+.param-count {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-left: 0.25rem;
+}
+/* Current Cue Indicator */
+.cue-item.current {
+    border-left: 3px solid var(--success);
+    background: rgba(63, 185, 80, 0.1);
+}
+.cue-item.current .cue-index { color: var(--success); }
+/* Cue Reorder Buttons */
+.cue-reorder {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.cue-reorder button {
+    padding: 2px 6px;
+    font-size: 0.7rem;
+    background: var(--bg-tertiary);
+}
+.cue-reorder button:hover { background: var(--accent); }
+/* Cue Actions Editor */
+.cue-actions-section {
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+}
+.actions-list { margin: 0.5rem 0; }
+.action-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    align-items: center;
+}
+.action-type-badge {
+    background: var(--accent);
+    color: var(--bg-primary);
+    padding: 0.125rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.action-item input, .action-item select, .action-item textarea {
+    flex: 1;
+    min-width: 100px;
+    padding: 0.375rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+.action-item textarea {
+    min-height: 60px;
+    font-family: monospace;
+    resize: vertical;
+}
+.action-add {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.action-add select { padding: 0.375rem; }'''
 
 def get_ui_app():
     return '''let ws = null;
 let selectedComponent = null;
 let components = [];
+let componentTree = null;
 let presets = [];
 let cues = [];
+let currentCueIndex = 0;
 
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
     setupTabs();
     await loadProjectInfo();
-    await loadComponents();
+    await loadComponentTree();
     connectWebSocket();
 }
 
@@ -469,29 +567,111 @@ function setupTabs() {
     });
 }
 
+async function loadComponentTree() {
+    try {
+        const res = await fetch('/ui/components/tree', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({path: '/project1', max_depth: 5})
+        });
+        const data = await res.json();
+        if (data.success && data.tree) {
+            componentTree = data.tree;
+            renderComponentTree();
+        } else {
+            // Fallback to flat list
+            await loadComponents();
+        }
+    } catch (e) {
+        console.error('Failed to load component tree:', e);
+        await loadComponents();
+    }
+}
+
 async function loadComponents() {
     try {
         const res = await fetch('/ui/discover');
         const data = await res.json();
         if (data.success) {
             components = data.components;
-            renderComponentList();
+            renderComponentListFlat();
         }
     } catch (e) {
         console.error('Failed to load components:', e);
     }
 }
 
-function renderComponentList() {
+function renderComponentListFlat() {
     const container = document.getElementById('components');
     container.innerHTML = components.map(c =>
         '<div class="component-item" data-path="' + c.path + '" onclick="selectComponent(\\'' + c.path + '\\')">' + c.name + '</div>'
     ).join('');
 }
 
+function renderComponentTree() {
+    const container = document.getElementById('components');
+    container.innerHTML = '<div class="tree-container"></div>';
+    const treeContainer = container.querySelector('.tree-container');
+    if (componentTree && componentTree.children) {
+        componentTree.children.forEach(child => {
+            renderTreeNode(child, treeContainer, 0);
+        });
+    }
+}
+
+function renderTreeNode(node, container, depth) {
+    const item = document.createElement('div');
+    item.className = 'tree-item';
+    item.style.paddingLeft = (depth * 16) + 'px';
+
+    const hasChildren = node.children && node.children.length > 0;
+    const hasParams = node.paramCount > 0;
+
+    let html = '';
+    if (hasChildren) {
+        html += '<span class="tree-toggle" onclick="toggleTreeNode(this)">&#9654;</span>';
+    } else {
+        html += '<span class="tree-spacer"></span>';
+    }
+    html += '<span class="tree-label' + (hasParams ? ' has-params' : '') + '" data-path="' + node.path + '">' + node.name + '</span>';
+    if (hasParams) {
+        html += '<span class="param-count">(' + node.paramCount + ')</span>';
+    }
+    item.innerHTML = html;
+
+    if (hasParams) {
+        item.querySelector('.tree-label').onclick = function() { selectComponent(node.path); };
+    }
+
+    container.appendChild(item);
+
+    if (hasChildren) {
+        const childContainer = document.createElement('div');
+        childContainer.className = 'tree-children collapsed';
+        node.children.forEach(child => {
+            renderTreeNode(child, childContainer, depth + 1);
+        });
+        container.appendChild(childContainer);
+    }
+}
+
+function toggleTreeNode(toggle) {
+    const item = toggle.parentElement;
+    const childContainer = item.nextElementSibling;
+    if (childContainer && childContainer.classList.contains('tree-children')) {
+        childContainer.classList.toggle('collapsed');
+        toggle.innerHTML = childContainer.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
+    }
+}
+
 async function selectComponent(path) {
     selectedComponent = path;
+    // Update selection in flat list
     document.querySelectorAll('.component-item').forEach(el => {
+        el.classList.toggle('selected', el.dataset.path === path);
+    });
+    // Update selection in tree view
+    document.querySelectorAll('.tree-label').forEach(el => {
         el.classList.toggle('selected', el.dataset.path === path);
     });
     await loadComponentParameters(path);
@@ -706,6 +886,7 @@ async function loadCues() {
         const res = await fetch('/cues/list', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
         const data = await res.json();
         cues = data.cues || [];
+        currentCueIndex = data.current_index || 0;
         renderCues();
     } catch (e) {
         console.error('Failed to load cues:', e);
@@ -723,10 +904,17 @@ function renderCues() {
     if (cues.length === 0) {
         html += '<p>No cues</p>';
     } else {
-        for (const cue of cues) {
-            html += '<div class="cue-item" data-id="' + cue.id + '">';
+        for (let i = 0; i < cues.length; i++) {
+            const cue = cues[i];
+            const isCurrent = cue.index === currentCueIndex;
+            html += '<div class="cue-item' + (isCurrent ? ' current' : '') + '" data-id="' + cue.id + '" data-index="' + cue.index + '">';
+            html += '<div class="cue-reorder">';
+            html += '<button onclick="moveCue(\\'' + cue.id + '\\', \\'up\\')">&#9650;</button>';
+            html += '<button onclick="moveCue(\\'' + cue.id + '\\', \\'down\\')">&#9660;</button>';
+            html += '</div>';
             html += '<span class="cue-index">' + cue.index + '</span>';
             html += '<span class="cue-name">' + cue.name + '</span>';
+            if (cue.autofollow) html += '<span style="font-size:0.7rem;color:var(--text-secondary);">auto</span>';
             html += '<button onclick="goCue(\\'' + cue.id + '\\')">GO</button>';
             html += '<button onclick="editCue(\\'' + cue.id + '\\')">Edit</button>';
             html += '<button class="danger" onclick="deleteCue(\\'' + cue.id + '\\')">Delete</button>';
@@ -735,6 +923,28 @@ function renderCues() {
     }
     html += '</div>';
     panel.innerHTML = html;
+}
+
+async function moveCue(id, direction) {
+    const cue = cues.find(c => c.id === id);
+    if (!cue) return;
+
+    const newIndex = direction === 'up' ? cue.index - 1 : cue.index + 1;
+    if (newIndex < 1 || newIndex > cues.length) return;
+
+    try {
+        const res = await fetch('/cues/reorder', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id: id, new_index: newIndex })
+        });
+        const data = await res.json();
+        if (data.success) {
+            await loadCues();
+        }
+    } catch (e) {
+        console.error('Failed to move cue:', e);
+    }
 }
 
 async function addCue() {
@@ -769,14 +979,26 @@ async function goCue(idOrAction) {
         } else {
             body = {id: idOrAction};
         }
-        await fetch(endpoint, {
+        const res = await fetch(endpoint, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(body)
         });
+        const data = await res.json();
+        if (data.success && data.cue) {
+            currentCueIndex = data.cue.index;
+            updateCueListDisplay();
+        }
     } catch (e) {
         console.error('Failed to go cue:', e);
     }
+}
+
+function updateCueListDisplay() {
+    document.querySelectorAll('.cue-item').forEach(item => {
+        const itemIndex = parseInt(item.dataset.index);
+        item.classList.toggle('current', itemIndex === currentCueIndex);
+    });
 }
 
 let editingCue = null;
@@ -792,13 +1014,15 @@ function renderCueEditor(cue) {
     const panel = document.getElementById('cues-panel');
     let html = '<div class="cue-editor">';
     html += '<div class="cue-editor-header">';
-    html += '<h3>Edit Cue</h3>';
+    html += '<h3>Edit Cue: ' + cue.name + '</h3>';
     html += '<button onclick="closeCueEditor()">Close</button>';
     html += '</div>';
     html += '<div class="cue-editor-body">';
     html += '<div class="cue-field"><label>Name:</label><input type="text" id="cue-name" value="' + cue.name + '"></div>';
     html += '<div class="cue-field"><label>Duration (s):</label><input type="number" id="cue-duration" value="' + (cue.duration || 0) + '" step="0.1" min="0"></div>';
-    html += '<div class="cue-field"><label><input type="checkbox" id="cue-autofollow" ' + (cue.autofollow ? 'checked' : '') + '> Auto-follow</label></div>';
+    html += '<div class="cue-field"><label><input type="checkbox" id="cue-autofollow" ' + (cue.autofollow ? 'checked' : '') + '> Auto-follow (go to next cue after duration)</label></div>';
+
+    // Snapshot section
     html += '<h4>Snapshot Components</h4>';
     html += '<div class="cue-snapshot-list">';
     const snapshot = cue.snapshot || {};
@@ -809,18 +1033,158 @@ function renderCueEditor(cue) {
             const enabled = data.enabled !== false;
             const paramCount = Object.keys(data.params || {}).length;
             html += '<div class="cue-snapshot-item">';
-            html += '<label><input type="checkbox" data-path="' + path + '" ' + (enabled ? 'checked' : '') + '> ' + path.split('/').pop() + '</label>';
+            html += '<label><input type="checkbox" class="snapshot-enabled" data-path="' + path + '" ' + (enabled ? 'checked' : '') + '> ' + path.split('/').pop() + '</label>';
             html += '<span class="snapshot-param-count">' + paramCount + ' params</span>';
             html += '</div>';
         }
     }
     html += '</div>';
+
+    // Actions section (the critical gap!)
+    html += '<div class="cue-actions-section">';
+    html += '<h4>Actions</h4>';
+    html += '<p style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:0.5rem;">Actions run after snapshot is applied</p>';
+    html += '<div class="actions-list" id="actions-list">';
+    const actions = cue.actions || [];
+    if (actions.length === 0) {
+        html += '<p style="font-size:0.875rem;color:var(--text-secondary);">No actions defined</p>';
+    } else {
+        for (let i = 0; i < actions.length; i++) {
+            html += renderActionItem(actions[i], i);
+        }
+    }
+    html += '</div>';
+    html += '<div class="action-add">';
+    html += '<select id="new-action-type">';
+    html += '<option value="python">Python Code</option>';
+    html += '<option value="osc">OSC Message</option>';
+    html += '<option value="timeline">Timeline Control</option>';
+    html += '<option value="parameter">Set Parameter</option>';
+    html += '</select>';
+    html += '<button onclick="addAction()">Add Action</button>';
+    html += '</div>';
+    html += '</div>';
+
     html += '<div class="cue-editor-actions">';
     html += '<button onclick="updateSnapshot()">Update Snapshot</button>';
     html += '<button onclick="saveCueChanges()">Save Changes</button>';
     html += '</div>';
     html += '</div></div>';
     panel.innerHTML = html;
+}
+
+function renderActionItem(action, index) {
+    let html = '<div class="action-item" data-index="' + index + '">';
+
+    switch(action.type) {
+        case 'python':
+            html += '<span class="action-type-badge">Python</span>';
+            html += '<textarea class="action-code" placeholder="Python code..." onchange="updateAction(' + index + ', this)">' + (action.code || '') + '</textarea>';
+            break;
+        case 'osc':
+            html += '<span class="action-type-badge">OSC</span>';
+            html += '<input type="text" class="osc-address" placeholder="/address" value="' + (action.address || '') + '" onchange="updateAction(' + index + ', this)">';
+            html += '<input type="text" class="osc-args" placeholder="args (comma-sep)" value="' + ((action.args || []).join(',')) + '" onchange="updateAction(' + index + ', this)">';
+            html += '<input type="text" class="osc-host" placeholder="host" value="' + (action.host || '127.0.0.1') + '" onchange="updateAction(' + index + ', this)" style="width:100px">';
+            html += '<input type="number" class="osc-port" placeholder="port" value="' + (action.port || 7000) + '" onchange="updateAction(' + index + ', this)" style="width:70px">';
+            break;
+        case 'timeline':
+            html += '<span class="action-type-badge">Timeline</span>';
+            html += '<select class="timeline-action" onchange="updateAction(' + index + ', this)">';
+            html += '<option value="play"' + (action.action === 'play' ? ' selected' : '') + '>Play</option>';
+            html += '<option value="pause"' + (action.action === 'pause' ? ' selected' : '') + '>Pause</option>';
+            html += '<option value="stop"' + (action.action === 'stop' ? ' selected' : '') + '>Stop</option>';
+            html += '<option value="jump_frame"' + (action.action === 'jump_frame' ? ' selected' : '') + '>Jump to Frame</option>';
+            html += '</select>';
+            html += '<input type="number" class="timeline-frame" placeholder="Frame #" value="' + (action.frame || '') + '" onchange="updateAction(' + index + ', this)" style="width:80px;' + (action.action !== 'jump_frame' ? 'display:none' : '') + '">';
+            break;
+        case 'parameter':
+            html += '<span class="action-type-badge">Param</span>';
+            html += '<input type="text" class="param-path" placeholder="/project1/comp" value="' + (action.path || '') + '" onchange="updateAction(' + index + ', this)">';
+            html += '<input type="text" class="param-name" placeholder="param name" value="' + (action.parameter || '') + '" onchange="updateAction(' + index + ', this)" style="width:100px">';
+            html += '<input type="text" class="param-value" placeholder="value" value="' + (action.value !== undefined ? action.value : '') + '" onchange="updateAction(' + index + ', this)" style="width:80px">';
+            break;
+        default:
+            html += '<span class="action-type-badge">' + action.type + '</span>';
+            html += '<span>Unknown action type</span>';
+    }
+
+    html += '<button class="danger" onclick="removeAction(' + index + ')" style="padding:0.25rem 0.5rem">X</button>';
+    html += '</div>';
+    return html;
+}
+
+function addAction() {
+    if (!editingCue) return;
+    const type = document.getElementById('new-action-type').value;
+    const actions = editingCue.actions || [];
+
+    let newAction = { type: type };
+    switch(type) {
+        case 'python':
+            newAction.code = '';
+            break;
+        case 'osc':
+            newAction.address = '/cue';
+            newAction.args = [];
+            newAction.host = '127.0.0.1';
+            newAction.port = 7000;
+            break;
+        case 'timeline':
+            newAction.action = 'play';
+            break;
+        case 'parameter':
+            newAction.path = '';
+            newAction.parameter = '';
+            newAction.value = '';
+            break;
+    }
+
+    actions.push(newAction);
+    editingCue.actions = actions;
+    renderCueEditor(editingCue);
+}
+
+function removeAction(index) {
+    if (!editingCue) return;
+    const actions = editingCue.actions || [];
+    actions.splice(index, 1);
+    editingCue.actions = actions;
+    renderCueEditor(editingCue);
+}
+
+function updateAction(index, element) {
+    if (!editingCue) return;
+    const actions = editingCue.actions || [];
+    if (!actions[index]) return;
+
+    const action = actions[index];
+    const item = element.closest('.action-item');
+
+    switch(action.type) {
+        case 'python':
+            action.code = item.querySelector('.action-code').value;
+            break;
+        case 'osc':
+            action.address = item.querySelector('.osc-address').value;
+            const argsStr = item.querySelector('.osc-args').value;
+            action.args = argsStr ? argsStr.split(',').map(s => s.trim()) : [];
+            action.host = item.querySelector('.osc-host').value || '127.0.0.1';
+            action.port = parseInt(item.querySelector('.osc-port').value) || 7000;
+            break;
+        case 'timeline':
+            action.action = item.querySelector('.timeline-action').value;
+            action.frame = parseInt(item.querySelector('.timeline-frame').value) || 1;
+            // Show/hide frame input based on action
+            const frameInput = item.querySelector('.timeline-frame');
+            frameInput.style.display = action.action === 'jump_frame' ? '' : 'none';
+            break;
+        case 'parameter':
+            action.path = item.querySelector('.param-path').value;
+            action.parameter = item.querySelector('.param-name').value;
+            action.value = item.querySelector('.param-value').value;
+            break;
+    }
 }
 
 function closeCueEditor() {
@@ -854,7 +1218,7 @@ async function saveCueChanges() {
 
     // Update enabled state from checkboxes
     const snapshot = editingCue.snapshot || {};
-    document.querySelectorAll('.cue-snapshot-item input[type=checkbox]').forEach(cb => {
+    document.querySelectorAll('.snapshot-enabled').forEach(cb => {
         const path = cb.dataset.path;
         if (path && snapshot[path]) {
             snapshot[path].enabled = cb.checked;
@@ -876,6 +1240,7 @@ async function saveCueChanges() {
         });
         const data = await res.json();
         if (data.success) {
+            alert('Cue saved successfully!');
             editingCue = null;
             await loadCues();
         } else {

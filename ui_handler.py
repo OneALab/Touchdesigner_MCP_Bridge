@@ -120,6 +120,68 @@ def discover_ui_components(parent_path='/project1', max_depth=3):
     except Exception as e:
         return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
 
+def discover_ui_components_hierarchical(parent_path='/project1', max_depth=5):
+    """Return nested tree of COMPs with custom parameters."""
+    try:
+        def get_custom_param_count(comp):
+            """Get count of custom parameters in a comp."""
+            count = 0
+            for page in comp.customPages:
+                count += len(page.pars)
+            return count
+
+        def get_custom_params_list(comp):
+            """Get list of custom parameter info."""
+            params = []
+            for page in comp.customPages:
+                for par in page.pars:
+                    if par.isCustom:
+                        params.append({
+                            'name': par.name,
+                            'label': par.label,
+                            'style': par.style
+                        })
+            return params
+
+        def build_tree(comp, depth=0):
+            """Recursively build tree of components."""
+            if depth > max_depth:
+                return None
+            if 'mcp_bridge' in comp.path:
+                return None
+
+            param_count = get_custom_param_count(comp)
+            params = get_custom_params_list(comp) if param_count > 0 else []
+
+            node = {
+                'path': comp.path,
+                'name': comp.name,
+                'type': comp.type,
+                'paramCount': param_count,
+                'params': params,
+                'children': []
+            }
+
+            # Find direct children that are baseCOMP or containerCOMP
+            for child in comp.children:
+                if child.family == 'COMP' and child.type in ['baseCOMP', 'containerCOMP']:
+                    child_node = build_tree(child, depth + 1)
+                    if child_node:
+                        # Include if it has params or has children with params
+                        if child_node['paramCount'] > 0 or len(child_node['children']) > 0:
+                            node['children'].append(child_node)
+
+            return node
+
+        root = op(parent_path)
+        if root is None:
+            return {'success': False, 'error': f'Path not found: {parent_path}'}
+
+        tree = build_tree(root)
+        return {'success': True, 'tree': tree}
+    except Exception as e:
+        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
+
 def set_parameter(op_path, param_name, value):
     """Set a parameter value."""
     try:
@@ -1051,6 +1113,12 @@ def handle_request(webServerDAT, request, response):
             'tdVersion': app.version if hasattr(app, 'version') else 'unknown',
             'tdBuild': app.build if hasattr(app, 'build') else 'unknown'
         }
+        handled = True
+    elif uri == '/ui/components/tree':
+        result = discover_ui_components_hierarchical(
+            body.get('path', '/project1'),
+            body.get('max_depth', 5)
+        )
         handled = True
 
     # Preset endpoints
