@@ -83,7 +83,7 @@ def run_setup():
     print("Running td_setup.py...")
     print("-" * 60)
     try:
-        exec(content)
+        exec(content, globals())
         print("=" * 60)
         print("MCP Bridge setup complete!")
         print("Test: http://127.0.0.1:9980/ping")
