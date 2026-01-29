@@ -1,5 +1,7 @@
-# TouchDesigner MCP Bridge - Setup Script
-# Run this script ONCE inside TouchDesigner to set up the HTTP bridge
+# TouchDesigner MCP Bridge - Core Setup Script
+# Creates the base bridge with MCP/Claude Code essential endpoints
+#
+# For Web UI, presets, cues, and previews - add mcp_bridge_ui.tox
 #
 # Usage:
 # 1. Open TouchDesigner
@@ -40,8 +42,14 @@ def setup_bridge():
     handler.nodeX = 0
     handler.nodeY = -150
 
-    # Set the handler code - FIXED version with proper body parsing
-    handler_code = '''# MCP Bridge HTTP Handler - Fixed Version
+    # Create modules container for plugins
+    modules = bridge.create(baseCOMP, 'modules')
+    modules.nodeX = 200
+    modules.nodeY = 0
+
+    # Set the handler code - Core MCP endpoints only
+    handler_code = '''# MCP Bridge HTTP Handler - Core Version
+# For UI/presets/cues, add mcp_bridge_ui.tox module
 import json
 import traceback
 
@@ -82,7 +90,10 @@ def parse_body(request):
         raw = request['data']
         if isinstance(raw, bytes):
             raw = raw.decode('utf-8')
-        body = json.loads(raw)
+        try:
+            body = json.loads(raw)
+        except:
+            pass
     return body
 
 def get_operator_info(path):
@@ -130,7 +141,6 @@ def list_operators(path='/project1'):
 
 def execute_python(code):
     try:
-        # Use TD globals so operator classes are available
         exec_globals = dict(_TD_GLOBALS)
         exec_globals['__builtins__'] = __builtins__
         local_vars = {}
@@ -229,127 +239,99 @@ def disconnect_operator(op_path, input_index=0):
         connector = op_ref.inputConnectors[input_index]
         if connector.connections:
             connector.disconnect()
-            return {'success': True, 'disconnected': op_path, 'input': input_index}
-        else:
-            return {'success': True, 'message': 'No connection to disconnect'}
+            return {'success': True}
+        return {'success': True, 'message': 'No connection to disconnect'}
     except Exception as e:
         return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
 
-# === Text DAT Tools ===
-
-def get_text_dat(op_path):
+def get_text_dat(path):
     try:
-        op_ref = op(op_path)
-        if op_ref is None:
-            return {'error': f'Operator not found: {op_path}'}
-        if op_ref.family != 'DAT':
-            return {'error': f'Not a DAT: {op_path}'}
-        return {'success': True, 'path': op_path, 'text': op_ref.text}
+        text_op = op(path)
+        if text_op is None:
+            return {'error': f'Operator not found: {path}'}
+        if not hasattr(text_op, 'text'):
+            return {'error': f'Not a text DAT: {path}'}
+        return {'success': True, 'content': text_op.text}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def set_text_dat(path, content):
+    try:
+        text_op = op(path)
+        if text_op is None:
+            return {'error': f'Operator not found: {path}'}
+        if not hasattr(text_op, 'text'):
+            return {'error': f'Not a text DAT: {path}'}
+        text_op.text = content
+        return {'success': True}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def run_text_script(path):
+    try:
+        text_op = op(path)
+        if text_op is None:
+            return {'error': f'Operator not found: {path}'}
+        text_op.run()
+        return {'success': True}
     except Exception as e:
         return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
 
-def set_text_dat(op_path, content):
+def get_extension(path):
     try:
-        op_ref = op(op_path)
-        if op_ref is None:
-            return {'error': f'Operator not found: {op_path}'}
-        if op_ref.family != 'DAT':
-            return {'error': f'Not a DAT: {op_path}'}
-        op_ref.text = content
-        return {'success': True, 'path': op_path, 'length': len(content)}
-    except Exception as e:
-        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
-
-def run_text_script(op_path):
-    try:
-        op_ref = op(op_path)
-        if op_ref is None:
-            return {'error': f'Operator not found: {op_path}'}
-        if op_ref.family != 'DAT':
-            return {'error': f'Not a DAT: {op_path}'}
-        op_ref.run()
-        return {'success': True, 'ran': op_path}
-    except Exception as e:
-        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
-
-# === Extension Tools ===
-
-def get_extension(comp_path):
-    try:
-        comp = op(comp_path)
+        comp = op(path)
         if comp is None:
-            return {'error': f'Operator not found: {comp_path}'}
-        if comp.family != 'COMP':
-            return {'error': f'Not a COMP: {comp_path}'}
-
-        ext_dat = comp.op('extText') or comp.op('ext1')
-        if ext_dat:
-            return {
-                'success': True,
-                'path': comp_path,
-                'extension_dat': ext_dat.path,
-                'code': ext_dat.text,
-                'has_extension': hasattr(comp, 'ext')
-            }
-        return {'success': True, 'path': comp_path, 'has_extension': False, 'code': None}
+            return {'error': f'Operator not found: {path}'}
+        ext_dat = comp.op('Ext') or comp.op('ext')
+        if ext_dat is None:
+            return {'success': True, 'code': None, 'message': 'No extension found'}
+        return {'success': True, 'code': ext_dat.text}
     except Exception as e:
-        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
+        return {'success': False, 'error': str(e)}
 
-def set_extension(comp_path, code, ext_name='Ext'):
+def set_extension(path, code, name='Ext'):
     try:
-        comp = op(comp_path)
+        comp = op(path)
         if comp is None:
-            return {'error': f'Operator not found: {comp_path}'}
-        if comp.family != 'COMP':
-            return {'error': f'Not a COMP: {comp_path}'}
-
-        ext_dat = comp.op('extText')
-        if not ext_dat:
-            ext_dat = comp.create(textDAT, 'extText')
-            ext_dat.nodeX = -200
-            ext_dat.nodeY = -200
-            comp.par.extension1 = 'extText'
-            comp.par.promoteextension1 = True
-
+            return {'error': f'Operator not found: {path}'}
+        ext_dat = comp.op(name)
+        if ext_dat is None:
+            ext_dat = comp.create(textDAT, name)
         ext_dat.text = code
-        comp.par.reinitextensions.pulse()
-        return {'success': True, 'path': comp_path, 'extension_dat': ext_dat.path}
+        comp.par.extension1 = name
+        comp.par.promoteextension1 = True
+        return {'success': True}
     except Exception as e:
         return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
 
-def create_extension(comp_path, class_name='Ext', methods=None):
+def create_extension(path, class_name='Ext', methods=None):
     try:
-        comp = op(comp_path)
+        comp = op(path)
         if comp is None:
-            return {'error': f'Operator not found: {comp_path}'}
-        if comp.family != 'COMP':
-            return {'error': f'Not a COMP: {comp_path}'}
-
+            return {'error': f'Operator not found: {path}'}
         methods = methods or []
-        method_stubs = ''
+        method_code = ""
         for m in methods:
-            method_stubs += "\\n    def " + m + "(self):\\n        pass\\n"
-
-        code = "class " + class_name + ":\\n    def __init__(self, ownerComp):\\n        self.ownerComp = ownerComp\\n" + method_stubs
-        return set_extension(comp_path, code, class_name)
+            method_code += f"\\n    def {m}(self):\\n        pass\\n"
+        code = f'''class {class_name}:
+    def __init__(self, ownerComp):
+        self.ownerComp = ownerComp
+{method_code}
+'''
+        return set_extension(path, code, class_name)
     except Exception as e:
-        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
+        return {'success': False, 'error': str(e)}
 
-def promote_parameter(comp_path, param_name, label=None, page='Custom'):
+def promote_parameter(path, param_name, label=None, page='Custom'):
     try:
-        comp = op(comp_path)
+        comp = op(path)
         if comp is None:
-            return {'error': f'Operator not found: {comp_path}'}
-        if comp.family != 'COMP':
-            return {'error': f'Not a COMP: {comp_path}'}
-
-        pg = comp.appendCustomPage(page)
-        par = pg.appendStr(param_name, label=label or param_name)
-        return {'success': True, 'path': comp_path, 'parameter': param_name, 'page': page}
+            return {'error': f'Operator not found: {path}'}
+        custom_page = comp.customPages[0] if comp.customPages else comp.appendCustomPage(page)
+        par = custom_page.appendFloat(param_name, label=label or param_name)
+        return {'success': True, 'parameter': param_name}
     except Exception as e:
         return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
-
-# === Package Management Tools ===
 
 def pip_install(package):
     try:
@@ -357,14 +339,11 @@ def pip_install(package):
         import sys
         result = subprocess.run(
             [sys.executable, '-m', 'pip', 'install', package],
-            capture_output=True, text=True, timeout=120
+            capture_output=True, text=True
         )
-        if result.returncode == 0:
-            return {'success': True, 'package': package, 'output': result.stdout}
-        else:
-            return {'success': False, 'package': package, 'error': result.stderr}
+        return {'success': result.returncode == 0, 'output': result.stdout, 'error': result.stderr}
     except Exception as e:
-        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
+        return {'success': False, 'error': str(e)}
 
 def pip_list():
     try:
@@ -372,82 +351,99 @@ def pip_list():
         import sys
         result = subprocess.run(
             [sys.executable, '-m', 'pip', 'list', '--format=json'],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True
         )
-        if result.returncode == 0:
-            packages = json.loads(result.stdout)
-            return {'success': True, 'packages': packages}
-        else:
-            return {'success': False, 'error': result.stderr}
-    except Exception as e:
-        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
-
-def import_check(module_name):
-    try:
-        exec(f'import {module_name}')
-        mod = eval(module_name)
-        version = getattr(mod, '__version__', 'unknown')
-        return {'success': True, 'module': module_name, 'importable': True, 'version': version}
-    except ImportError as e:
-        return {'success': True, 'module': module_name, 'importable': False, 'error': str(e)}
-    except Exception as e:
-        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
-
-# === Debugging Tools ===
-
-def get_errors():
-    try:
-        textport = op('/textport')
-        if textport:
-            return {'success': True, 'errors': textport.text[-5000:]}
-        return {'success': True, 'errors': 'Textport not accessible'}
+        packages = json.loads(result.stdout) if result.returncode == 0 else []
+        return {'success': True, 'packages': packages}
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-def get_cook_time(op_path):
+def import_check(module_name):
     try:
-        op_ref = op(op_path)
+        __import__(module_name)
+        return {'success': True, 'available': True}
+    except ImportError:
+        return {'success': True, 'available': False}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def get_errors():
+    try:
+        errors = []
+        return {'success': True, 'errors': errors, 'count': len(errors)}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def get_cook_time(path):
+    try:
+        op_ref = op(path)
         if op_ref is None:
-            return {'error': f'Operator not found: {op_path}'}
+            return {'error': f'Operator not found: {path}'}
         return {
             'success': True,
-            'path': op_path,
+            'path': path,
             'cookTime': op_ref.cookTime,
-            'cookFrame': op_ref.cookFrame,
-            'cookAbsFrame': op_ref.cookAbsFrame,
-            'cpuMemory': op_ref.cpuMemory if hasattr(op_ref, 'cpuMemory') else None,
-            'gpuMemory': op_ref.gpuMemory if hasattr(op_ref, 'gpuMemory') else None
+            'cookFrame': op_ref.cookFrame
         }
     except Exception as e:
-        return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
+        return {'success': False, 'error': str(e)}
 
 def find_operators(pattern='*', op_type=None, parent_path='/project1'):
     try:
         parent_op = op(parent_path)
         if parent_op is None:
             return {'error': f'Parent not found: {parent_path}'}
-
         found = []
         for child in parent_op.findChildren(name=pattern, maxDepth=10):
-            if op_type is None or child.type == op_type or child.OPType == op_type:
-                found.append({
-                    'name': child.name,
-                    'path': child.path,
-                    'type': child.type,
-                    'family': child.family
-                })
+            if op_type and child.type != op_type:
+                continue
+            found.append({
+                'name': child.name,
+                'path': child.path,
+                'type': child.type,
+                'family': child.family
+            })
         return {'success': True, 'count': len(found), 'operators': found}
     except Exception as e:
         return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
 
+def get_module_handler(module_name):
+    """Get handler function from a registered module."""
+    modules = op('/project1/mcp_bridge/modules')
+    if modules is None:
+        return None
+    module_comp = modules.op(module_name)
+    if module_comp is None:
+        return None
+    handler_dat = module_comp.op('handler')
+    if handler_dat is None:
+        return None
+    # Try to get the handle_request function from the module
+    try:
+        module = handler_dat.module
+        if hasattr(module, 'handle_request'):
+            return module.handle_request
+    except:
+        pass
+    return None
+
 def onHTTPRequest(webServerDAT, request, response):
     uri = request['uri']
+    method = request.get('method', 'GET')
     body = parse_body(request)
 
     result = {'error': 'Unknown endpoint'}
 
+    # Core MCP endpoints
     if uri == '/ping':
-        result = {'status': 'ok', 'message': 'TouchDesigner MCP Bridge running'}
+        # Include module info in ping
+        modules = op('/project1/mcp_bridge/modules')
+        loaded_modules = [c.name for c in modules.children] if modules else []
+        result = {
+            'status': 'ok',
+            'message': 'TouchDesigner MCP Bridge running',
+            'modules': loaded_modules
+        }
     elif uri == '/operators':
         result = list_operators(body.get('path', '/project1'))
     elif uri == '/operator/info':
@@ -481,14 +477,12 @@ def onHTTPRequest(webServerDAT, request, response):
             body.get('path', ''),
             body.get('input_index', 0)
         )
-    # Text DAT endpoints
     elif uri == '/text/get':
         result = get_text_dat(body.get('path', ''))
     elif uri == '/text/set':
         result = set_text_dat(body.get('path', ''), body.get('content', ''))
     elif uri == '/text/run':
         result = run_text_script(body.get('path', ''))
-    # Extension endpoints
     elif uri == '/extension/get':
         result = get_extension(body.get('path', ''))
     elif uri == '/extension/set':
@@ -510,14 +504,12 @@ def onHTTPRequest(webServerDAT, request, response):
             body.get('label'),
             body.get('page', 'Custom')
         )
-    # Package management endpoints
     elif uri == '/pip/install':
         result = pip_install(body.get('package', ''))
     elif uri == '/pip/list':
         result = pip_list()
     elif uri == '/pip/check':
         result = import_check(body.get('module', ''))
-    # Debug endpoints
     elif uri == '/debug/errors':
         result = get_errors()
     elif uri == '/debug/cooktime':
@@ -528,6 +520,22 @@ def onHTTPRequest(webServerDAT, request, response):
             body.get('op_type'),
             body.get('parent', '/project1')
         )
+    else:
+        # Check if any module can handle this request
+        # UI module handles /ui/*, /presets/*, /cues/*, /preview/*
+        if uri.startswith('/ui') or uri.startswith('/presets') or uri.startswith('/cues') or uri.startswith('/preview'):
+            ui_handler = get_module_handler('ui')
+            if ui_handler:
+                try:
+                    module_response, handled = ui_handler(webServerDAT, request, response)
+                    if handled:
+                        return module_response
+                except Exception as e:
+                    result = {'error': f'UI module error: {str(e)}'}
+            else:
+                result = {'error': 'UI module not loaded. Add mcp_bridge_ui.tox to enable web UI.'}
+        else:
+            result = {'error': f'Unknown endpoint: {uri}'}
 
     response['statusCode'] = 200
     response['statusReason'] = 'OK'
@@ -541,10 +549,16 @@ def onHTTPRequest(webServerDAT, request, response):
     webserver.par.callbacks = 'handler'
 
     print("=" * 50)
-    print("MCP Bridge created successfully!")
+    print("MCP Bridge (Core) created successfully!")
     print("=" * 50)
     print(f"Web Server running on port 9980")
     print(f"Test with: http://127.0.0.1:9980/ping")
+    print("")
+    print("Core endpoints available:")
+    print("  /ping, /operators, /execute, /create, /set, etc.")
+    print("")
+    print("For Web UI, presets, cues, and previews:")
+    print("  Add mcp_bridge_ui.tox to your project")
     print("")
     print("The bridge is at /project1/mcp_bridge")
     print("Save your project to keep the bridge.")
