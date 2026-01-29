@@ -130,7 +130,7 @@ def get_ui_index():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TouchDesigner Control</title>
-    <link rel="stylesheet" href="/ui/styles">
+    <link rel="stylesheet" href="/ui/styles.css">
 </head>
 <body>
     <header>
@@ -167,9 +167,9 @@ def get_ui_index():
             <div id="cues-panel"></div>
         </div>
     </main>
-    <script src="/ui/controls"></script>
-    <script src="/ui/preview"></script>
-    <script src="/ui/app"></script>
+    <script src="/ui/controls.js"></script>
+    <script src="/ui/preview.js"></script>
+    <script src="/ui/app.js"></script>
 </body>
 </html>'''
 
