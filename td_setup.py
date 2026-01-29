@@ -407,26 +407,6 @@ def find_operators(pattern='*', op_type=None, parent_path='/project1'):
     except Exception as e:
         return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
 
-def get_module_handler(module_name):
-    """Get handler function from a registered module."""
-    modules = op('/project1/mcp_bridge/modules')
-    if modules is None:
-        return None
-    module_comp = modules.op(module_name)
-    if module_comp is None:
-        return None
-    handler_dat = module_comp.op('handler')
-    if handler_dat is None:
-        return None
-    # Try to get the handle_request function from the module
-    try:
-        module = handler_dat.module
-        if hasattr(module, 'handle_request'):
-            return module.handle_request
-    except:
-        pass
-    return None
-
 def onHTTPRequest(webServerDAT, request, response):
     uri = request['uri']
     method = request.get('method', 'GET')
@@ -436,13 +416,12 @@ def onHTTPRequest(webServerDAT, request, response):
 
     # Core MCP endpoints
     if uri == '/ping':
-        # Include module info in ping
-        modules = op('/project1/mcp_bridge/modules')
-        loaded_modules = [c.name for c in modules.children] if modules else []
         result = {
             'status': 'ok',
-            'message': 'TouchDesigner MCP Bridge running',
-            'modules': loaded_modules
+            'service': 'core',
+            'port': 9980,
+            'message': 'TouchDesigner MCP Bridge (Core) running',
+            'ui_url': 'http://127.0.0.1:9981/ui'
         }
     elif uri == '/operators':
         result = list_operators(body.get('path', '/project1'))
@@ -521,21 +500,7 @@ def onHTTPRequest(webServerDAT, request, response):
             body.get('parent', '/project1')
         )
     else:
-        # Check if any module can handle this request
-        # UI module handles /ui/*, /presets/*, /cues/*, /preview/*
-        if uri.startswith('/ui') or uri.startswith('/presets') or uri.startswith('/cues') or uri.startswith('/preview'):
-            ui_handler = get_module_handler('ui')
-            if ui_handler:
-                try:
-                    module_response, handled = ui_handler(webServerDAT, request, response)
-                    if handled:
-                        return module_response
-                except Exception as e:
-                    result = {'error': f'UI module error: {str(e)}'}
-            else:
-                result = {'error': 'UI module not loaded. Add mcp_bridge_ui.tox to enable web UI.'}
-        else:
-            result = {'error': f'Unknown endpoint: {uri}'}
+        result = {'error': f'Unknown endpoint: {uri}. UI available at http://127.0.0.1:9981/ui'}
 
     response['statusCode'] = 200
     response['statusReason'] = 'OK'
@@ -551,14 +516,9 @@ def onHTTPRequest(webServerDAT, request, response):
     print("=" * 50)
     print("MCP Bridge (Core) created successfully!")
     print("=" * 50)
-    print(f"Web Server running on port 9980")
-    print(f"Test with: http://127.0.0.1:9980/ping")
+    print("Core API: http://127.0.0.1:9980/ping")
     print("")
-    print("Core endpoints available:")
-    print("  /ping, /operators, /execute, /create, /set, etc.")
-    print("")
-    print("For Web UI, presets, cues, and previews:")
-    print("  Add mcp_bridge_ui.tox to your project")
+    print("Core endpoints: /ping, /operators, /execute, /create, etc.")
     print("")
     print("The bridge is at /project1/mcp_bridge")
     print("Save your project to keep the bridge.")

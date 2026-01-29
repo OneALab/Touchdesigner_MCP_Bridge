@@ -1072,32 +1072,48 @@ def broadcast_change(webServerDAT, path, param, value, exclude_client=None):
 
 # === Main Request Handler ===
 
-def handle_request(webServerDAT, request, response):
-    """Handle UI-related HTTP requests. Called by core handler."""
+def onHTTPRequest(webServerDAT, request, response):
+    """Handle all UI HTTP requests - standalone webserver callback."""
     uri = request['uri']
     method = request.get('method', 'GET')
+
+    # Add CORS headers for cross-origin requests
+    response['Access-Control-Allow-Origin'] = '*'
+    response['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response['Access-Control-Allow-Headers'] = 'Content-Type'
+
+    # Handle preflight OPTIONS requests
+    if method == 'OPTIONS':
+        response['statusCode'] = 200
+        response['statusReason'] = 'OK'
+        return response
 
     # Serve static files for /ui routes
     if uri.startswith('/ui') and method == 'GET':
         if serve_static_file(uri, response):
             response['statusCode'] = 200
             response['statusReason'] = 'OK'
-            return response, True
+            return response
 
     body = parse_body(request)
     result = None
-    handled = False
+
+    # Health check ping
+    if uri == '/ping':
+        result = {
+            'status': 'ok',
+            'service': 'ui',
+            'port': 9981
+        }
 
     # UI endpoints
-    if uri == '/ui/schema':
+    elif uri == '/ui/schema':
         result = scan_custom_parameters(body.get('path', ''))
-        handled = True
     elif uri == '/ui/discover':
         result = discover_ui_components(
             body.get('path', '/project1'),
             body.get('max_depth', 3)
         )
-        handled = True
     elif uri == '/ui/set':
         changes = body.get('changes', [])
         results = []
@@ -1105,7 +1121,6 @@ def handle_request(webServerDAT, request, response):
             r = set_parameter(change.get('path', ''), change.get('parameter', ''), change.get('value', ''))
             results.append(r)
         result = {'success': True, 'results': results}
-        handled = True
     elif uri == '/ui/info':
         result = {
             'projectName': project.name if project else 'Untitled',
@@ -1113,41 +1128,31 @@ def handle_request(webServerDAT, request, response):
             'tdVersion': app.version if hasattr(app, 'version') else 'unknown',
             'tdBuild': app.build if hasattr(app, 'build') else 'unknown'
         }
-        handled = True
     elif uri == '/ui/components/tree':
         result = discover_ui_components_hierarchical(
             body.get('path', '/project1'),
             body.get('max_depth', 5)
         )
-        handled = True
 
     # Preset endpoints
     elif uri == '/presets/list':
         result = list_presets(body.get('comp_path'))
-        handled = True
     elif uri == '/presets/save':
         result = save_preset(body.get('name', ''), body.get('comp_path', ''))
-        handled = True
     elif uri == '/presets/load':
         result = load_preset(body.get('name', ''), body.get('comp_path', ''))
-        handled = True
     elif uri == '/presets/delete':
         result = delete_preset(body.get('name', ''), body.get('comp_path', ''))
-        handled = True
 
     # Cue endpoints
     elif uri == '/cues/list':
         result = list_cues()
-        handled = True
     elif uri == '/cues/save':
         result = save_cue(body)
-        handled = True
     elif uri == '/cues/delete':
         result = delete_cue(body.get('id', ''))
-        handled = True
     elif uri == '/cues/reorder':
         result = reorder_cue(body.get('id', ''), body.get('new_index', 1))
-        handled = True
     elif uri == '/cues/go':
         cue_id = body.get('id')
         cue_index = body.get('index')
@@ -1157,21 +1162,16 @@ def handle_request(webServerDAT, request, response):
             result = execute_cue(index=int(cue_index))
         else:
             result = {'success': False, 'error': 'No cue ID or index provided'}
-        handled = True
     elif uri == '/cues/next':
         result = go_next()
-        handled = True
     elif uri == '/cues/back':
         result = go_back()
-        handled = True
     elif uri == '/cues/current':
         result = get_current_cue()
-        handled = True
     elif uri == '/cues/snapshot':
         parent_path = body.get('parent_path', '/project1')
         max_depth = body.get('max_depth', 3)
         result = snapshot_all_components(parent_path, max_depth)
-        handled = True
 
     # Preview endpoints
     elif uri == '/preview/top' or uri.startswith('/preview/top?'):
@@ -1215,22 +1215,25 @@ def handle_request(webServerDAT, request, response):
                 response['statusReason'] = 'OK'
                 response['Content-Type'] = content_type
                 response['data'] = data
-                return response, True
+                return response
             else:
                 result = preview_result
-        handled = True
     elif uri == '/preview/chop':
         result = get_chop_preview(body.get('path', ''), body.get('max_samples', 100))
-        handled = True
     elif uri == '/preview/discover':
         result = discover_previews(body.get('path', '/project1'), body.get('max_depth', 3))
-        handled = True
 
-    if handled and result is not None:
+    # Return JSON response
+    if result is not None:
         response['statusCode'] = 200
         response['statusReason'] = 'OK'
         response['Content-Type'] = 'application/json'
         response['data'] = json.dumps(result, indent=2)
-        return response, True
+        return response
 
-    return response, handled
+    # 404 for unknown endpoints
+    response['statusCode'] = 404
+    response['statusReason'] = 'Not Found'
+    response['Content-Type'] = 'application/json'
+    response['data'] = json.dumps({'error': f'Unknown endpoint: {uri}'})
+    return response

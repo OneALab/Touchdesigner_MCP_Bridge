@@ -72,24 +72,17 @@ def fetch_file(filename, url):
             return None
 
 def setup_ui_module(ui_handler_code):
-    """Set up the UI module after core is running."""
+    """Set up the UI module with its own webserver on port 9981."""
     bridge = op('/project1/mcp_bridge')
     if bridge is None:
         print("ERROR: Core bridge not found")
         return False
 
-    # Get or create modules container
-    modules = bridge.op('modules')
-    if modules is None:
-        modules = bridge.create(baseCOMP, 'modules')
-        modules.nodeX = 200
-        modules.nodeY = 0
-
-    # Get or create UI module
-    ui = modules.op('ui')
+    # Create UI container directly under mcp_bridge (not in modules/)
+    ui = bridge.op('ui')
     if ui is None:
-        ui = modules.create(baseCOMP, 'ui')
-        ui.nodeX = 0
+        ui = bridge.create(baseCOMP, 'ui')
+        ui.nodeX = 300
         ui.nodeY = 0
 
     # Create handler DAT with ui_handler code
@@ -100,10 +93,21 @@ def setup_ui_module(ui_handler_code):
         handler.nodeY = 0
     handler.text = ui_handler_code
 
+    # Create UI's own webserver on port 9981
+    webserver = ui.op('webserver')
+    if webserver is None:
+        webserver = ui.create(webserverDAT, 'webserver')
+        webserver.nodeX = 0
+        webserver.nodeY = -150
+
+    webserver.par.port = 9981
+    webserver.par.active = True
+    webserver.par.callbacks = 'handler'
+
     # Create static UI DATs with defaults
     create_ui_dats(ui)
 
-    print("  ✓ UI module installed")
+    print("  ✓ UI module installed on port 9981")
     return True
 
 def create_ui_dats(ui):
@@ -1436,8 +1440,11 @@ def run_setup():
 
     print("=" * 60)
     print("MCP Bridge setup complete!")
-    print("  Core: http://127.0.0.1:9980/ping")
-    print("  Web UI: http://127.0.0.1:9980/ui")
+    print("")
+    print("  Core API:  http://127.0.0.1:9980/ping")
+    print("  Web UI:    http://127.0.0.1:9981/ui")
+    print("")
+    print("Core and UI run on separate webservers.")
     print("=" * 60)
 
 # Run when script is executed
