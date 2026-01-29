@@ -371,6 +371,59 @@ button.danger {
 }
 button.danger:hover {
     background: #da3633;
+}
+/* Cue Editor */
+.cue-editor {
+    padding: 1rem;
+    max-width: 600px;
+}
+.cue-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+.cue-editor-header h3 { margin: 0; }
+.cue-editor-body { display: flex; flex-direction: column; gap: 1rem; }
+.cue-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.cue-field label { min-width: 100px; }
+.cue-field input[type="text"], .cue-field input[type="number"] {
+    flex: 1;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 4px;
+}
+.cue-snapshot-list {
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    padding: 0.5rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+.cue-snapshot-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+.cue-snapshot-item:last-child { border-bottom: none; }
+.snapshot-param-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+.cue-editor-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1rem;
 }'''
 
 def get_ui_app():
@@ -726,8 +779,111 @@ async function goCue(idOrAction) {
     }
 }
 
-function editCue(id) {
-    alert('Edit cue: ' + id + ' (editor coming soon)');
+let editingCue = null;
+
+async function editCue(id) {
+    const cue = cues.find(c => c.id === id);
+    if (!cue) return;
+    editingCue = cue;
+    renderCueEditor(cue);
+}
+
+function renderCueEditor(cue) {
+    const panel = document.getElementById('cues-panel');
+    let html = '<div class="cue-editor">';
+    html += '<div class="cue-editor-header">';
+    html += '<h3>Edit Cue</h3>';
+    html += '<button onclick="closeCueEditor()">Close</button>';
+    html += '</div>';
+    html += '<div class="cue-editor-body">';
+    html += '<div class="cue-field"><label>Name:</label><input type="text" id="cue-name" value="' + cue.name + '"></div>';
+    html += '<div class="cue-field"><label>Duration (s):</label><input type="number" id="cue-duration" value="' + (cue.duration || 0) + '" step="0.1" min="0"></div>';
+    html += '<div class="cue-field"><label><input type="checkbox" id="cue-autofollow" ' + (cue.autofollow ? 'checked' : '') + '> Auto-follow</label></div>';
+    html += '<h4>Snapshot Components</h4>';
+    html += '<div class="cue-snapshot-list">';
+    const snapshot = cue.snapshot || {};
+    if (Object.keys(snapshot).length === 0) {
+        html += '<p>No components in snapshot</p>';
+    } else {
+        for (const [path, data] of Object.entries(snapshot)) {
+            const enabled = data.enabled !== false;
+            const paramCount = Object.keys(data.params || {}).length;
+            html += '<div class="cue-snapshot-item">';
+            html += '<label><input type="checkbox" data-path="' + path + '" ' + (enabled ? 'checked' : '') + '> ' + path.split('/').pop() + '</label>';
+            html += '<span class="snapshot-param-count">' + paramCount + ' params</span>';
+            html += '</div>';
+        }
+    }
+    html += '</div>';
+    html += '<div class="cue-editor-actions">';
+    html += '<button onclick="updateSnapshot()">Update Snapshot</button>';
+    html += '<button onclick="saveCueChanges()">Save Changes</button>';
+    html += '</div>';
+    html += '</div></div>';
+    panel.innerHTML = html;
+}
+
+function closeCueEditor() {
+    editingCue = null;
+    renderCues();
+}
+
+async function updateSnapshot() {
+    if (!editingCue) return;
+    try {
+        const res = await fetch('/cues/snapshot', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({parent_path: '/project1', max_depth: 3})
+        });
+        const data = await res.json();
+        if (data.success) {
+            editingCue.snapshot = data.snapshot;
+            renderCueEditor(editingCue);
+        }
+    } catch (e) {
+        console.error('Failed to update snapshot:', e);
+    }
+}
+
+async function saveCueChanges() {
+    if (!editingCue) return;
+    const name = document.getElementById('cue-name').value.trim();
+    const duration = parseFloat(document.getElementById('cue-duration').value) || 0;
+    const autofollow = document.getElementById('cue-autofollow').checked;
+
+    // Update enabled state from checkboxes
+    const snapshot = editingCue.snapshot || {};
+    document.querySelectorAll('.cue-snapshot-item input[type=checkbox]').forEach(cb => {
+        const path = cb.dataset.path;
+        if (path && snapshot[path]) {
+            snapshot[path].enabled = cb.checked;
+        }
+    });
+
+    try {
+        const res = await fetch('/cues/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                id: editingCue.id,
+                name: name,
+                duration: duration,
+                autofollow: autofollow,
+                snapshot: snapshot,
+                actions: editingCue.actions || []
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            editingCue = null;
+            await loadCues();
+        } else {
+            alert('Failed to save: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        console.error('Failed to save cue:', e);
+    }
 }
 
 async function deleteCue(id) {
