@@ -88,6 +88,22 @@ def load_modules():
     if script_dir not in sys.path:
         sys.path.insert(0, script_dir)
 
+    # Collect TD built-in globals to inject into imported handler modules.
+    # importlib-loaded modules don't get TD's script globals (tableDAT, etc.)
+    # so we need to inject them manually.
+    _td_globals = {}
+    for name in ['tableDAT', 'textDAT', 'baseCOMP', 'containerCOMP', 'webserverDAT',
+                 'timerCHOP', 'moviefileinTOP', 'constantTOP', 'switchTOP', 'nullTOP',
+                 'infoCHOP', 'selectCHOP', 'mergeCHOP', 'mathCHOP', 'renameCHOP',
+                 'scriptCHOP', 'oscinDAT', 'oscinCHOP', 'oscoutDAT', 'outTOP', 'outCHOP',
+                 'nullCHOP', 'op', 'parent', 'me', 'mod', 'ext', 'run',
+                 'project', 'ui', 'absTime', 'ParMode']:
+        try:
+            val = eval(name)
+            _td_globals[name] = val
+        except Exception:
+            pass
+
     # Get or create module registry table
     registry = bridge.op('module_registry')
     if registry is None:
@@ -116,6 +132,11 @@ def load_modules():
                     mod = sys.modules[mod_name]
                 else:
                     mod = importlib.import_module(mod_name)
+
+                # Inject TD globals into the module
+                for gname, gval in _td_globals.items():
+                    if not hasattr(mod, gname):
+                        setattr(mod, gname, gval)
 
                 manifest = getattr(mod, 'MODULE', None)
                 if manifest is None:
@@ -159,6 +180,12 @@ def load_modules():
                 handler = sys.modules[handler_module_name]
             else:
                 handler = importlib.import_module(handler_module_name)
+
+            # Inject TD globals into handler module so it can use
+            # tableDAT, baseCOMP, op(), etc.
+            for gname, gval in _td_globals.items():
+                if not hasattr(handler, gname):
+                    setattr(handler, gname, gval)
 
             # Call setup if it exists
             if hasattr(handler, 'setup'):
