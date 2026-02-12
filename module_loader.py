@@ -93,11 +93,13 @@ def load_modules():
     # so we need to inject them manually.
     _td_globals = {}
     for name in ['tableDAT', 'textDAT', 'baseCOMP', 'containerCOMP', 'webserverDAT',
+                 'COMP', 'TOP', 'CHOP', 'SOP', 'MAT', 'DAT',
                  'timerCHOP', 'moviefileinTOP', 'constantTOP', 'switchTOP', 'nullTOP',
                  'infoCHOP', 'selectCHOP', 'mergeCHOP', 'mathCHOP', 'renameCHOP',
                  'scriptCHOP', 'oscinDAT', 'oscinCHOP', 'oscoutDAT', 'outTOP', 'outCHOP',
                  'nullCHOP', 'op', 'parent', 'me', 'mod', 'ext', 'run',
-                 'project', 'ui', 'absTime', 'ParMode']:
+                 'project', 'ui', 'app', 'absTime', 'ParMode',
+                 'tdu', 'JustifyType', 'iop', 'ipar']:
         try:
             val = eval(name)
             _td_globals[name] = val

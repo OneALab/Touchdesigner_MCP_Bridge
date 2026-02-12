@@ -24,15 +24,38 @@ _ASSET_CACHE = {}
 
 def setup(bridge_op):
     """Load UI assets into Text DATs for serving."""
-    # Find assets directory
+    # Find assets directory — __file__ doesn't work in TD, so try multiple paths
     assets_dir = None
+
+    candidates = []
+    # Try __file__ (works when imported normally, not in TD Text DATs)
     try:
         handler_dir = os.path.dirname(os.path.abspath(__file__))
-        assets_dir = os.path.join(handler_dir, 'assets')
+        candidates.append(os.path.join(handler_dir, 'assets'))
     except NameError:
         pass
+    # Try known repo locations
+    candidates.append(os.path.join(
+        r"c:\Users\onea\Dropbox (Personal)\TouchDesigner\_mcp_bridge",
+        "modules", "mod_ui", "assets"))
+    candidates.append(os.path.join(
+        os.path.expanduser("~"), "Dropbox (Personal)", "TouchDesigner",
+        "_mcp_bridge", "modules", "mod_ui", "assets"))
+    # Try cache location
+    try:
+        appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
+        candidates.append(os.path.join(
+            appdata, 'TouchDesigner', 'mcp_bridge_cache',
+            'modules', 'mod_ui', 'assets'))
+    except Exception:
+        pass
 
-    if assets_dir and os.path.exists(assets_dir):
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            assets_dir = candidate
+            break
+
+    if assets_dir:
         # Cache assets from files
         asset_files = {
             'index.html': 'ui_index',
@@ -303,11 +326,21 @@ def on_request(uri, method, body, request, response):
         except Exception as e:
             return {'success': False, 'error': str(e)}
     elif uri == '/ui/info':
+        try:
+            pname = project.name if 'project' in dir() and project else 'Untitled'
+            pfolder = project.folder if 'project' in dir() and project else ''
+        except Exception:
+            pname, pfolder = 'Untitled', ''
+        try:
+            tdver = app.version if 'app' in dir() else 'unknown'
+            tdbuild = app.build if 'app' in dir() else 'unknown'
+        except Exception:
+            tdver, tdbuild = 'unknown', 'unknown'
         return {
-            'projectName': project.name if project else 'Untitled',
-            'projectPath': project.folder if project else '',
-            'tdVersion': app.version if hasattr(app, 'version') else 'unknown',
-            'tdBuild': app.build if hasattr(app, 'build') else 'unknown'
+            'projectName': pname,
+            'projectPath': pfolder,
+            'tdVersion': tdver,
+            'tdBuild': tdbuild
         }
     elif uri == '/ui/components/tree':
         return discover_ui_components_hierarchical(
