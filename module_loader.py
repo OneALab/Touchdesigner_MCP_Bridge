@@ -38,22 +38,24 @@ def load_modules():
 
     candidates = []
 
+    # If loader_script.py passed the local repo path, use it first
+    _lr = globals().get('_local_repo')
+    if _lr:
+        candidates.append(_lr)
+
+    # Environment variable override
+    if os.environ.get('MCP_BRIDGE_REPO'):
+        candidates.append(os.environ['MCP_BRIDGE_REPO'])
+
     # Try TD's project folder (where the .toe file is saved)
     try:
         pf = project.folder
         if pf:
-            # _mcp_bridge might be a subfolder of the project folder
             candidates.append(os.path.join(pf, '_mcp_bridge'))
-            # Or the project folder's parent might contain _mcp_bridge
             candidates.append(os.path.join(os.path.dirname(pf), '_mcp_bridge'))
-            # Or modules/ might be directly inside the project folder
             candidates.append(pf)
     except Exception as e:
         print(f"  Note: Could not read project.folder: {e}")
-
-    # Hardcoded known locations
-    candidates.append(r"c:\Users\onea\Dropbox (Personal)\TouchDesigner\_mcp_bridge")
-    candidates.append(os.path.join(os.path.expanduser("~"), "Dropbox (Personal)", "TouchDesigner", "_mcp_bridge"))
 
     # Also try the cache directory (for GitHub-fetched modules)
     try:

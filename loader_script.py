@@ -19,10 +19,17 @@ import json
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/OneALab/Touchdesigner_MCP_Bridge/master"
 
 # Known local repo locations (checked in order)
-LOCAL_REPO_PATHS = [
-    r"c:\Users\onea\Dropbox (Personal)\TouchDesigner\_mcp_bridge",
-    os.path.join(os.path.expanduser("~"), "Dropbox (Personal)", "TouchDesigner", "_mcp_bridge"),
-]
+# Override with MCP_BRIDGE_REPO env var, or auto-detect from this script's location
+LOCAL_REPO_PATHS = []
+if os.environ.get('MCP_BRIDGE_REPO'):
+    LOCAL_REPO_PATHS.append(os.environ['MCP_BRIDGE_REPO'])
+try:
+    # If this script is loaded from disk, its directory IS the repo
+    _this_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.exists(os.path.join(_this_dir, 'td_setup.py')):
+        LOCAL_REPO_PATHS.append(_this_dir)
+except Exception:
+    pass
 
 # Core files to fetch
 CORE_FILES = {
@@ -235,6 +242,7 @@ def run_setup():
         loader_globals = dict(globals())
         loader_globals['_cached_modules'] = fetched_modules
         loader_globals['_cache_dir'] = cache_dir
+        loader_globals['_local_repo'] = local_repo
         exec(module_loader_code, loader_globals)
         print("  + Module loader executed")
     except Exception as e:

@@ -28,19 +28,16 @@ def setup(bridge_op):
     assets_dir = None
 
     candidates = []
-    # Try __file__ (works when imported normally, not in TD Text DATs)
+    # Try __file__ (works when imported via importlib from disk)
     try:
         handler_dir = os.path.dirname(os.path.abspath(__file__))
         candidates.append(os.path.join(handler_dir, 'assets'))
     except NameError:
         pass
-    # Try known repo locations
-    candidates.append(os.path.join(
-        r"c:\Users\onea\Dropbox (Personal)\TouchDesigner\_mcp_bridge",
-        "modules", "mod_ui", "assets"))
-    candidates.append(os.path.join(
-        os.path.expanduser("~"), "Dropbox (Personal)", "TouchDesigner",
-        "_mcp_bridge", "modules", "mod_ui", "assets"))
+    # Try env var override
+    repo = os.environ.get('MCP_BRIDGE_REPO', '')
+    if repo:
+        candidates.append(os.path.join(repo, 'modules', 'mod_ui', 'assets'))
     # Try cache location
     try:
         appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
