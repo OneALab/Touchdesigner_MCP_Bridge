@@ -2,6 +2,9 @@
 """
 TouchDesigner MCP Server
 Connects Claude Code to a running TouchDesigner instance via HTTP API
+
+Core tools communicate on port 9980.
+Module tools communicate on port 9981.
 """
 
 import json
@@ -11,14 +14,16 @@ import urllib.parse
 from mcp.server.fastmcp import FastMCP
 
 # Configuration
-TD_HOST = "http://127.0.0.1:9980"
+TD_HOST = "http://127.0.0.1"
+CORE_PORT = 9980
+MODULE_PORT = 9981
 
 mcp = FastMCP("touchdesigner")
 
 
-def td_request(endpoint: str, data: dict = None) -> dict:
+def td_request(endpoint: str, data: dict = None, port: int = CORE_PORT) -> dict:
     """Make a request to the TouchDesigner HTTP API."""
-    url = f"{TD_HOST}{endpoint}"
+    url = f"{TD_HOST}:{port}{endpoint}"
 
     try:
         if data:
@@ -34,14 +39,16 @@ def td_request(endpoint: str, data: dict = None) -> dict:
         with urllib.request.urlopen(req, timeout=10) as response:
             return json.loads(response.read().decode('utf-8'))
     except urllib.error.URLError as e:
-        return {"error": f"Cannot connect to TouchDesigner at {TD_HOST}. Make sure TD is running with the bridge server. Error: {str(e)}"}
+        return {"error": f"Cannot connect to TouchDesigner at {url}. Make sure TD is running with the bridge server. Error: {str(e)}"}
     except Exception as e:
         return {"error": str(e)}
 
 
+# === Core Tools (port 9980) ===
+
 @mcp.tool()
 def td_ping() -> str:
-    """Check if TouchDesigner is running and the bridge is active."""
+    """Check if TouchDesigner is running and the bridge is active. Also lists loaded modules."""
     result = td_request("/ping")
     return json.dumps(result, indent=2)
 
@@ -52,7 +59,7 @@ def td_list_operators(path: str = "/project1") -> str:
     List all operators under a given path in TouchDesigner.
 
     Args:
-        path: The path to list operators from (default: "/" for root)
+        path: The path to list operators from (default: "/project1")
     """
     result = td_request("/operators", {"path": path})
     return json.dumps(result, indent=2)
@@ -74,7 +81,6 @@ def td_get_operator_info(path: str) -> str:
 def td_get_operator_parameters(op_type: str) -> str:
     """
     Get all available parameters for an operator type.
-    Use this to discover correct parameter names before creating operators.
 
     Args:
         op_type: The operator type (e.g., "timerCHOP", "moviefileinTOP")
@@ -315,9 +321,7 @@ def td_pip_install(package: str) -> str:
 
 @mcp.tool()
 def td_list_packages() -> str:
-    """
-    List installed pip packages in TouchDesigner's Python environment.
-    """
+    """List installed pip packages in TouchDesigner's Python environment."""
     result = td_request("/pip/list")
     return json.dumps(result, indent=2)
 
@@ -338,9 +342,7 @@ def td_import_check(module: str) -> str:
 
 @mcp.tool()
 def td_get_errors() -> str:
-    """
-    Get recent Python errors from TouchDesigner's textport.
-    """
+    """Get recent Python errors from TouchDesigner's textport."""
     result = td_request("/debug/errors")
     return json.dumps(result, indent=2)
 
@@ -372,6 +374,114 @@ def td_find_operators(pattern: str = "*", op_type: str = None, parent: str = "/p
         "op_type": op_type,
         "parent": parent
     })
+    return json.dumps(result, indent=2)
+
+
+# === Module Tools (port 9981) ===
+
+@mcp.tool()
+def td_modules_list() -> str:
+    """List all loaded modules and their status."""
+    result = td_request("/modules")
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def td_cue_list() -> str:
+    """List all cues in the cue system."""
+    result = td_request("/cues/list", port=MODULE_PORT)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def td_cue_go(cue_id: str = None, index: int = None) -> str:
+    """
+    Execute a cue by ID or index number.
+
+    Args:
+        cue_id: The cue ID string (e.g., "cue_abc123")
+        index: The cue index number (1-based)
+    """
+    data = {}
+    if cue_id:
+        data['id'] = cue_id
+    if index is not None:
+        data['index'] = index
+    result = td_request("/cues/go", data, port=MODULE_PORT)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def td_cue_next() -> str:
+    """Advance to the next cue in the cue list."""
+    result = td_request("/cues/next", {}, port=MODULE_PORT)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def td_cue_back() -> str:
+    """Go back to the previous cue in the cue list."""
+    result = td_request("/cues/back", {}, port=MODULE_PORT)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def td_preset_list(comp_path: str = None) -> str:
+    """
+    List all saved presets, optionally filtered by component path.
+
+    Args:
+        comp_path: Optional component path to filter presets for
+    """
+    data = {}
+    if comp_path:
+        data['comp_path'] = comp_path
+    result = td_request("/presets/list", data, port=MODULE_PORT)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def td_preset_save(name: str, comp_path: str) -> str:
+    """
+    Save current parameter values of a COMP as a named preset.
+
+    Args:
+        name: Name for the preset
+        comp_path: Path to the COMP to snapshot
+    """
+    result = td_request("/presets/save", {"name": name, "comp_path": comp_path}, port=MODULE_PORT)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def td_preset_load(name: str, comp_path: str) -> str:
+    """
+    Load a saved preset and apply its values to a COMP.
+
+    Args:
+        name: Name of the preset to load
+        comp_path: Path to the COMP to apply the preset to
+    """
+    result = td_request("/presets/load", {"name": name, "comp_path": comp_path}, port=MODULE_PORT)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def td_timeline_control(action: str, frame: int = None, rate: float = None) -> str:
+    """
+    Control the TouchDesigner timeline.
+
+    Args:
+        action: One of: play, pause, stop, jump_frame, set_rate, toggle_loop, status
+        frame: Frame number (for jump_frame action)
+        rate: Playback rate (for set_rate action)
+    """
+    data = {'action': action}
+    if frame is not None:
+        data['frame'] = frame
+    if rate is not None:
+        data['rate'] = rate
+    result = td_request(f"/timeline/{action}", data, port=MODULE_PORT)
     return json.dumps(result, indent=2)
 
 

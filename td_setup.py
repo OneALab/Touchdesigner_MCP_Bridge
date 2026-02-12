@@ -1,55 +1,68 @@
 # TouchDesigner MCP Bridge - Core Setup Script
 # Creates the base bridge with MCP/Claude Code essential endpoints
 #
-# For Web UI, presets, cues, and previews - add mcp_bridge_ui.tox
+# For modules (UI, presets, cues, StreamDeck, etc.), run module_loader.py after this.
 #
 # Usage:
 # 1. Open TouchDesigner
 # 2. Create a Text DAT, paste this script
 # 3. Run it once to create the Web Server
+# 4. Then run module_loader.py to load modules
 
 import json
 import traceback
 
 def setup_bridge():
-    """Set up the MCP bridge web server in TouchDesigner."""
+    """Set up the MCP bridge web server in TouchDesigner.
+
+    Non-destructive: preserves existing bridge and module data (presets,
+    cues, StreamDeck config, etc.) when re-run.  Only the core handler
+    code and webserver settings are updated.
+    """
 
     project = op('/project1')
     if project is None:
         print("ERROR: /project1 not found. Are you in a standard TouchDesigner project?")
         return
 
-    # Delete existing bridge if present
-    existing = op('/project1/mcp_bridge')
-    if existing:
-        existing.destroy()
-        print("Deleted existing MCP Bridge, recreating...")
+    # Create or reuse bridge container
+    bridge = op('/project1/mcp_bridge')
+    if bridge is None:
+        bridge = project.create(baseCOMP, 'mcp_bridge')
+        bridge.nodeX = -400
+        bridge.nodeY = 400
+        print("Created new MCP Bridge container")
+    else:
+        print("Updating existing MCP Bridge (data preserved)")
 
-    # Create container for bridge
-    bridge = project.create(baseCOMP, 'mcp_bridge')
-    bridge.nodeX = -400
-    bridge.nodeY = 400
-
-    # Create Web Server DAT
-    webserver = bridge.create(webserverDAT, 'webserver')
+    # Create or reuse Web Server DAT
+    webserver = bridge.op('webserver')
+    if webserver is None:
+        webserver = bridge.create(webserverDAT, 'webserver')
+        webserver.nodeX = 0
+        webserver.nodeY = 0
     webserver.par.port = 9980
     webserver.par.active = True
-    webserver.nodeX = 0
-    webserver.nodeY = 0
 
-    # Create handler Text DAT
-    handler = bridge.create(textDAT, 'handler')
-    handler.nodeX = 0
-    handler.nodeY = -150
+    # Create or reuse handler Text DAT
+    handler = bridge.op('handler')
+    if handler is None:
+        handler = bridge.create(textDAT, 'handler')
+        handler.nodeX = 0
+        handler.nodeY = -150
 
-    # Create modules container for plugins
-    modules = bridge.create(baseCOMP, 'modules')
-    modules.nodeX = 200
-    modules.nodeY = 0
+    # Create module registry table if it doesn't exist
+    registry = bridge.op('module_registry')
+    if registry is None:
+        registry = bridge.create(tableDAT, 'module_registry')
+        registry.nodeX = -200
+        registry.nodeY = -150
+        registry.clear()
+        registry.appendRow(['name', 'version', 'prefix', 'status', 'loaded_at', 'description'])
 
     # Set the handler code - Core MCP endpoints only
-    handler_code = '''# MCP Bridge HTTP Handler - Core Version
-# For UI/presets/cues, add mcp_bridge_ui.tox module
+    handler_code = '''# MCP Bridge HTTP Handler - Core Endpoints
+# For module endpoints (UI, presets, cues, etc.), see port 9981
 import json
 import traceback
 
@@ -407,6 +420,29 @@ def find_operators(pattern='*', op_type=None, parent_path='/project1'):
     except Exception as e:
         return {'success': False, 'error': str(e), 'traceback': traceback.format_exc()}
 
+def get_loaded_modules():
+    """List loaded modules from the registry."""
+    try:
+        bridge = op('/project1/mcp_bridge')
+        registry = bridge.op('module_registry') if bridge else None
+        if registry is None:
+            return {'success': True, 'modules': [], 'count': 0}
+
+        modules = []
+        for i in range(1, registry.numRows):
+            row = registry.row(i)
+            modules.append({
+                'name': str(row[0]),
+                'version': str(row[1]),
+                'prefix': str(row[2]),
+                'status': str(row[3]),
+                'loaded_at': str(row[4]),
+                'description': str(row[5]) if len(row) > 5 else ''
+            })
+        return {'success': True, 'modules': modules, 'count': len(modules)}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
 def onHTTPRequest(webServerDAT, request, response):
     uri = request['uri']
     method = request.get('method', 'GET')
@@ -416,13 +452,17 @@ def onHTTPRequest(webServerDAT, request, response):
 
     # Core MCP endpoints
     if uri == '/ping':
+        modules = get_loaded_modules()
         result = {
             'status': 'ok',
             'service': 'core',
             'port': 9980,
-            'message': 'TouchDesigner MCP Bridge (Core) running',
-            'ui_url': 'http://127.0.0.1:9981/ui'
+            'message': 'TouchDesigner MCP Bridge running',
+            'modules_port': 9981,
+            'modules': modules.get('modules', [])
         }
+    elif uri == '/modules':
+        result = get_loaded_modules()
     elif uri == '/operators':
         result = list_operators(body.get('path', '/project1'))
     elif uri == '/operator/info':
@@ -500,7 +540,7 @@ def onHTTPRequest(webServerDAT, request, response):
             body.get('parent', '/project1')
         )
     else:
-        result = {'error': f'Unknown endpoint: {uri}. UI available at http://127.0.0.1:9981/ui'}
+        result = {'error': f'Unknown endpoint: {uri}. Module endpoints available on port 9981.'}
 
     response['statusCode'] = 200
     response['statusReason'] = 'OK'
@@ -517,9 +557,9 @@ def onHTTPRequest(webServerDAT, request, response):
     print("MCP Bridge (Core) created successfully!")
     print("=" * 50)
     print("Core API: http://127.0.0.1:9980/ping")
+    print("Core endpoints: /ping, /modules, /operators, /execute, /create, etc.")
     print("")
-    print("Core endpoints: /ping, /operators, /execute, /create, etc.")
-    print("")
+    print("Next: Run module_loader.py to load modules (UI, cues, presets, etc.)")
     print("The bridge is at /project1/mcp_bridge")
     print("Save your project to keep the bridge.")
     print("=" * 50)

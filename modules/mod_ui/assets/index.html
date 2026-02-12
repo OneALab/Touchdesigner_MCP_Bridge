@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TouchDesigner Control</title>
+    <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+    <header>
+        <h1 id="page-title">TouchDesigner Control</h1>
+        <nav class="tabs">
+            <button class="tab active" data-tab="controls">Controls</button>
+            <button class="tab" data-tab="previews">Previews</button>
+            <button class="tab" data-tab="presets">Presets</button>
+            <button class="tab" data-tab="cues">Cues</button>
+            <button class="tab" data-tab="streamdeck">Stream Deck</button>
+        </nav>
+        <div id="connection-status" class="status disconnected">
+            <span class="indicator"></span>
+            <span class="text">Disconnected</span>
+        </div>
+    </header>
+    <main>
+        <div id="tab-controls" class="tab-content active">
+            <aside id="component-list">
+                <h3>Components</h3>
+                <div id="components"></div>
+            </aside>
+            <section id="parameter-panel">
+                <h3 id="selected-component">Select a component</h3>
+                <div id="parameters"></div>
+            </section>
+        </div>
+        <div id="tab-previews" class="tab-content">
+            <div class="preview-grid" id="preview-grid"></div>
+        </div>
+        <div id="tab-presets" class="tab-content">
+            <div id="presets-panel" class="full-panel"></div>
+        </div>
+        <div id="tab-cues" class="tab-content">
+            <div id="cues-panel" class="full-panel"></div>
+        </div>
+        <div id="tab-streamdeck" class="tab-content">
+            <div id="streamdeck-panel" class="full-panel"></div>
+        </div>
+    </main>
+    <script src="/ui/controls.js?v=5"></script>
+    <script src="/ui/preview.js?v=5"></script>
+    <script src="/ui/app.js?v=5"></script>
+</body>
+</html>
